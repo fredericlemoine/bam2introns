@@ -21,4 +21,4 @@ deploy:
 	env GOOS=darwin GOARCH=386 ${GO_EXECUTABLE} build -o deploy/${VERSION}/bam2introns_386_darwin -ldflags "-X github.com/fredericlemoine/bam2introns/cmd.Version=${VERSION}" github.com/fredericlemoine/bam2introns
 	env GOOS=linux GOARCH=amd64 ${GO_EXECUTABLE} build -o deploy/${VERSION}/bam2introns_amd64_linux -ldflags "-X github.com/fredericlemoine/bam2introns/cmd.Version=${VERSION}" github.com/fredericlemoine/bam2introns
 	env GOOS=linux GOARCH=386 ${GO_EXECUTABLE} build -o deploy/${VERSION}/bam2introns_386_linux -ldflags "-X github.com/fredericlemoine/bam2introns/cmd.Version=${VERSION}" github.com/fredericlemoine/bam2introns
-	tar -czvf deploy/${VERSION}.tar.gz deploy/${VERSION}
+	tar -czvf deploy/${VERSION}.tar.gz --directory="deploy" ${VERSION}
