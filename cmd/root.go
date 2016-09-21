@@ -3,10 +3,10 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/biogo/hts/sam"
 	"github.com/fredericlemoine/bam2introns/io"
 	"github.com/spf13/cobra"
 	"os"
+	"sync"
 )
 
 var Version string = "Unknown"
@@ -14,6 +14,28 @@ var Version string = "Unknown"
 var stranded string
 var cpus int
 var grouped bool
+
+type indata struct {
+	infile string
+	index  int
+}
+type outdata struct {
+	intron    *io.Intron
+	fileindex int
+}
+
+func max(a, b int) int {
+	if a < b {
+		return b
+	}
+	return a
+}
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 var RootCmd = &cobra.Command{
 	Use:   "bam2introns <in1.bam> [in2.bam...]",
@@ -35,50 +57,82 @@ If the bam file is oriented (-s reverse):
 		if len(args) == 0 {
 			io.ExitWithMessage(errors.New("No input file given"))
 		}
+
+		intronChan := make(chan outdata)
+		fileChannel := make(chan indata)
 		buffer := make(map[string]*io.Intron)
-		for i, infile := range args {
-			fmt.Fprintf(os.Stdout, "File: %s\n", infile)
-			reads := io.ReadBam(infile, cpus)
-			s := io.Strand(stranded)
-			if grouped {
-				groupIntrons(buffer, reads, s, len(args), i)
+
+		// We put files and their index in a channel
+		go func() {
+			for i, infile := range args {
+				fileChannel <- indata{infile, i}
+			}
+			close(fileChannel)
+		}()
+
+		totalFiles := len(args)
+		// If > 2 threads per file then we can
+		// use them to read bam more quickly
+		readThread := max(cpus/totalFiles, 1)
+
+		// We init the thread pool
+		var wg sync.WaitGroup
+		for cpu := 0; cpu < min(cpus, totalFiles); cpu++ {
+			wg.Add(1)
+			go func() {
+				// We take a file in the channel
+				for f := range fileChannel {
+					// We init bam reader
+					reads := io.ReadBam(f.infile, readThread)
+					s := io.Strand(stranded)
+					// We take reads from the reader
+					for r := range reads {
+						// We detect introns in this read
+						for _, intron := range io.Introns(r, s) {
+							// We give this intron to the channel
+							intronChan <- outdata{intron, f.index}
+						}
+					}
+				}
+				wg.Done()
+			}()
+		}
+
+		// We wait for all the threads to end and then close the intron channel
+		go func() {
+			wg.Wait()
+			close(intronChan)
+		}()
+
+		// We take detected introns from the channel
+		for intron := range intronChan {
+			if !grouped {
+				// If not grouped, we print it directly
+				fmt.Fprintf(os.Stdout, "%s\n", io.PrintIntrons(intron.intron))
 			} else {
-				readIntrons(reads, s)
+				// Otherwise, we buffer it and count the occurences
+				st := '+'
+				if !intron.intron.Strand {
+					st = '-'
+				}
+				key := fmt.Sprintf("%s:%d-%d[%c]", intron.intron.Chr, intron.intron.Start, intron.intron.End, st)
+				if i, ok := buffer[key]; !ok {
+					intron.intron.Count = make([]int, totalFiles)
+					intron.intron.Count[intron.fileindex] = 1
+					buffer[key] = intron.intron
+				} else {
+					i.Count[intron.fileindex]++
+				}
 			}
 		}
+
+		// Finally, if grouped, we print the occurences of all introns
 		if grouped {
 			for _, intron := range buffer {
 				fmt.Fprintf(os.Stdout, "%s\n", io.PrintIntrons(intron))
 			}
 		}
 	},
-}
-
-func readIntrons(reads <-chan *sam.Record, s io.Stranded) {
-	for r := range reads {
-		for _, intron := range io.Introns(r, s) {
-			fmt.Fprintf(os.Stdout, "%s\n", io.PrintIntrons(intron))
-		}
-	}
-}
-
-func groupIntrons(buffer map[string]*io.Intron, reads <-chan *sam.Record, s io.Stranded, totalFiles int, currentFile int) {
-	for r := range reads {
-		for _, intron := range io.Introns(r, s) {
-			st := '+'
-			if !intron.Strand {
-				st = '-'
-			}
-			key := fmt.Sprintf("%s:%d-%d[%c]", intron.Chr, intron.Start, intron.End, st)
-			if i, ok := buffer[key]; !ok {
-				intron.Count = make([]int, totalFiles)
-				intron.Count[currentFile] = 1
-				buffer[key] = intron
-			} else {
-				i.Count[currentFile]++
-			}
-		}
-	}
 }
 
 func Execute() {
