@@ -14,6 +14,7 @@ var Version string = "Unknown"
 var stranded string
 var cpus int
 var grouped bool
+var qualityFilter int
 
 type indata struct {
 	infile string
@@ -52,6 +53,8 @@ If the bam file is oriented (-s stranded):
 If the bam file is oriented (-s reverse):
 - The strand is the opposite of the strand of the read mapping if the read is the first read
 - The strand is the strand of the read mapping if the read is the mate read
+
+Does not take into account secondary alignments (flag 0x100)
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
@@ -83,7 +86,7 @@ If the bam file is oriented (-s reverse):
 				// We take a file in the channel
 				for f := range fileChannel {
 					// We init bam reader
-					reads := io.ReadBam(f.infile, readThread)
+					reads := io.ReadBam(f.infile, readThread, qualityFilter, true)
 					s := io.Strand(stranded)
 					// We take reads from the reader
 					for r := range reads {
@@ -146,4 +149,6 @@ func init() {
 	RootCmd.PersistentFlags().IntVarP(&cpus, "threads", "t", 1, "Number of decompressing threads")
 	RootCmd.PersistentFlags().StringVarP(&stranded, "stranded", "s", "none", "Stranded : none, stranded or reverse")
 	RootCmd.PersistentFlags().BoolVarP(&grouped, "grouped", "g", false, "Grouped : group introns by positions, and count them")
+	RootCmd.PersistentFlags().IntVarP(&qualityFilter, "quality-filter", "q", 255, "Filters reads with map qual < cutoff")
+
 }

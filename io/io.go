@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-func ReadBam(file string, cpus int) <-chan *sam.Record {
+func ReadBam(file string, cpus int, qualityFilter int, discardSecondary bool) <-chan *sam.Record {
 	var fi *os.File
 	var err error
 	var br *bam.Reader
@@ -34,7 +34,10 @@ func ReadBam(file string, cpus int) <-chan *sam.Record {
 			if sr, err3 := br.Read(); err3 != nil {
 				break
 			} else {
-				reads <- sr
+				// If primary alignment, we take it
+				if (!discardSecondary || sr.Flags&sam.Secondary == 0) && int(sr.MapQ) >= qualityFilter {
+					reads <- sr
+				}
 			}
 		}
 		br.Close()
