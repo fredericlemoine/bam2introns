@@ -8,5 +8,5 @@ May group the introns per coordinates and count the number of reads (option -g).
 
 Example:
 ```bash
-bam2introns -i sample.bam -s none -t 2 > sample_introns.bed
+bam2introns -s none -t 2  sample.bam  > sample_introns.bed
 ```
