@@ -1,6 +1,7 @@
 package io
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/biogo/hts/sam"
@@ -13,7 +14,7 @@ type Intron struct {
 	Strand bool   // true : + , false: -
 	Mate   bool   // true : from a mate read, false : from a first read
 	Name   string // Name of the read
-	Count  int    // may be used. If not: 0
+	Count  []int  // May store several read counts (if several samples for example), nil by default
 }
 
 type Stranded byte
@@ -38,7 +39,10 @@ func Strand(s string) Stranded {
 	return 0
 }
 
-/* Returns true if the read has at least one intron */
+/*
+Returns the introns represented by this read (using CIGAR N operator)
+If any
+*/
 func Introns(read *sam.Record, s Stranded) []*Intron {
 	introns := make([]*Intron, 0, 3)
 	start := read.Start()
@@ -59,7 +63,7 @@ func Introns(read *sam.Record, s Stranded) []*Intron {
 	for _, cigarOp := range read.Cigar {
 		switch cigarOp.Type() {
 		case sam.CigarSkipped:
-			introns = append(introns, &Intron{read.Ref.Name(), start, start + cigarOp.Len(), strand, mate, read.Name, 1})
+			introns = append(introns, &Intron{read.Ref.Name(), start, start + cigarOp.Len(), strand, mate, read.Name, nil})
 			start += cigarOp.Len()
 		case sam.CigarMatch:
 			start += cigarOp.Len()
@@ -86,8 +90,26 @@ func Introns(read *sam.Record, s Stranded) []*Intron {
 
 func PrintIntrons(i *Intron) string {
 	if i.Strand {
-		return fmt.Sprintf("%s\t%d\t%d\t%s\t%d\t+", i.Chr, i.Start, i.End, i.Name, i.Count)
+		return fmt.Sprintf("%s\t%d\t%d\t%s\t%s\t+", i.Chr, i.Start, i.End, i.Name, joinCounts(i))
 	} else {
-		return fmt.Sprintf("%s\t%d\t%d\t%s\t%d\t-", i.Chr, i.Start, i.End, i.Name, i.Count)
+		return fmt.Sprintf("%s\t%d\t%d\t%s\t%s\t-", i.Chr, i.Start, i.End, i.Name, joinCounts(i))
 	}
+}
+
+// Returns string representation of read counts for the intron
+// if no counts (nil): then "0"
+func joinCounts(i *Intron) string {
+
+	if i.Count == nil {
+		return "0"
+	}
+
+	var buffer bytes.Buffer
+	for id, c := range i.Count {
+		if id > 0 {
+			buffer.WriteString(",")
+		}
+		buffer.WriteString(fmt.Sprintf("%d", c))
+	}
+	return buffer.String()
 }
